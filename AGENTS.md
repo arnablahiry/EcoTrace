@@ -1,1 +1,0 @@
-Before writing code, first explore the project structure, then invoke the chatgpt-app-builder skill for documentation.
