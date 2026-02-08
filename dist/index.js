@@ -1,5 +1,4 @@
 import "dotenv/config";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -14,9 +13,10 @@ const server = new McpServer({
 });
 const widgetName = "green-scanner";
 const widgetUri = `ui://widgets/apps-sdk/${widgetName}.html`;
+const extWidgetUri = `ui://widgets/ext-apps/${widgetName}.html`;
 const widgetEntryKey = `src/widgets/${widgetName}.tsx`;
-const renderWidgetHtml = (serverUrl, widgetFile, styleFile) => {
-    return `<script type="module">window.skybridge = { hostType: "apps-sdk", serverUrl: "${serverUrl}" };</script>
+const renderWidgetHtml = (hostType, serverUrl, widgetFile, styleFile) => {
+    return `<script type="module">window.skybridge = { hostType: "${hostType}", serverUrl: "${serverUrl}" };</script>
 <div id="root"></div>
 <script type="module">
   import("${serverUrl}/assets/${widgetFile}");
@@ -51,14 +51,67 @@ server.registerResource(widgetName, widgetUri, {
     const serverUrl = host ? `https://${host}` : "http://localhost:3000";
     const files = resolveWidgetFiles();
     const html = files
-        ? renderWidgetHtml(serverUrl, files.widgetFile, files.styleFile)
+        ? renderWidgetHtml("apps-sdk", serverUrl, files.widgetFile, files.styleFile)
         : `<div>Widget assets not found.</div>`;
+    const contentMeta = {
+        "openai/widgetCSP": {
+            resource_domains: [serverUrl],
+            connect_domains: [serverUrl],
+        },
+        "openai/widgetDomain": serverUrl,
+        "openai/widgetDescription": "EcoTrace widget",
+        "openai/widgetPrefersBorder": true,
+        "openai/widgetHeight": 720,
+        "openai/widgetWidth": 960,
+        "openai/widgetOrientation": "landscape",
+        "openai/widgetLoadingText": "Loading EcoTrace...",
+    };
     return {
         contents: [
             {
                 uri: widgetUri,
                 mimeType: "text/html+skybridge",
                 text: html,
+                _meta: contentMeta,
+            },
+        ],
+    };
+});
+server.registerResource(`${widgetName}-mcp-app`, extWidgetUri, {
+    description: "EcoTrace widget UI (mcp-app)",
+    mimeType: "text/html;profile=mcp-app",
+    _meta: {
+        ui: {
+            csp: {
+                resourceDomains: ["*"],
+                connectDomains: ["*"],
+            },
+        },
+    },
+}, async (_uri, extra) => {
+    const headers = extra?.requestInfo?.headers ?? {};
+    const host = headers["x-forwarded-host"] ?? headers.host ?? "";
+    const serverUrl = host ? `https://${host}` : "http://localhost:3000";
+    const files = resolveWidgetFiles();
+    const html = files
+        ? renderWidgetHtml("mcp-app", serverUrl, files.widgetFile, files.styleFile)
+        : `<div>Widget assets not found.</div>`;
+    const contentMeta = {
+        ui: {
+            csp: {
+                resourceDomains: [serverUrl],
+                connectDomains: [serverUrl],
+            },
+            domain: serverUrl,
+        },
+    };
+    return {
+        contents: [
+            {
+                uri: extWidgetUri,
+                mimeType: "text/html;profile=mcp-app",
+                text: html,
+                _meta: contentMeta,
             },
         ],
     };
@@ -753,65 +806,6 @@ Return JSON ONLY with keys: name, brand, categories, packaging, labels, ingredie
         alternatives,
     };
 }
-server.registerResource(widgetName, widgetUri, {
-    title: "Green Scanner Widget",
-    description: "UI for scanning products and finding sustainable alternatives.",
-    mimeType: "text/html+skybridge",
-}, async (uri, extra) => {
-    const isProduction = process.env.NODE_ENV === "production";
-    const hostFromHeaders = extra?.requestInfo?.headers?.["x-forwarded-host"] ??
-        extra?.requestInfo?.headers?.host;
-    const serverUrl = isProduction && hostFromHeaders ? `https://${hostFromHeaders}` : "http://localhost:3000";
-    const widgetHtml = `<script type="module">window.skybridge = { hostType: "apps-sdk", serverUrl: "${serverUrl}" };</script>
-<script type="module">
-  import { injectIntoGlobalHook } from "${serverUrl}/assets/@react-refresh";
-  injectIntoGlobalHook(window); window.$RefreshReg$ = () => {};
-  window.$RefreshSig$ = () => (type) => type;
-  window.__vite_plugin_react_preamble_installed__ = true;
-</script>
-<script type="module" src="${serverUrl}/@vite/client"></script>
-<div id="root"></div>
-<script type="module" id="dev-widget-entry">
-  import("${serverUrl}/src/widgets/${widgetName}");
-</script>`;
-    const widgetDomain = isProduction && hostFromHeaders
-        ? `https://${hostFromHeaders}`
-        : serverUrl;
-    const contentMeta = {
-        "openai/widgetCSP": {
-            resource_domains: [serverUrl],
-            connect_domains: isProduction
-                ? [serverUrl]
-                : [serverUrl, "ws://localhost:24678"],
-        },
-        "openai/widgetDomain": widgetDomain,
-        "openai/widgetDescription": "Green Scanner widget",
-        "openai/widgetPrefersBorder": true,
-        "openai/widgetFallbackText": "Open the Green Scanner widget to search for sustainable alternatives.",
-        "openai/widgetHeight": 720,
-        "openai/widgetWidth": 960,
-        "openai/widgetOrientation": "landscape",
-        "openai/widgetLoadingText": "Loading Green Scanner...",
-        "openai/widgetInitialState": {
-            title: "Green Scanner",
-            status: "Ready",
-        },
-        "openai/widgetSessionKey": crypto
-            .createHash("sha256")
-            .update(`green-scanner-${serverUrl}`)
-            .digest("hex"),
-    };
-    return {
-        contents: [
-            {
-                uri: uri.href,
-                mimeType: "text/html+skybridge",
-                text: widgetHtml,
-                _meta: contentMeta,
-            },
-        ],
-    };
-});
 server.registerTool("find_sustainable_alternative", {
     description: "Identifies a product from a search query and finds more sustainable alternatives.",
     inputSchema: {
@@ -824,7 +818,8 @@ server.registerTool("find_sustainable_alternative", {
             .describe("Optional product image as a data URL for image-based estimation."),
     },
     _meta: {
-        "openai/outputTemplate": widgetUri,
+        "ui/resourceUri": extWidgetUri,
+        ui: { resourceUri: extWidgetUri },
     },
 }, async ({ product_query, image_base64 }) => {
     try {
@@ -849,6 +844,24 @@ if (process.env.NODE_ENV === "production") {
     const app = express();
     app.use(express.json({ limit: "10mb" }));
     app.use(mcp(server));
+    app.get("/", (req, res) => {
+        const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+        const serverUrl = host ? `https://${host}` : "http://localhost:3000";
+        const files = resolveWidgetFiles();
+        const html = files
+            ? renderWidgetHtml("apps-sdk", serverUrl, files.widgetFile, files.styleFile)
+            : `<div>Widget assets not found.</div>`;
+        res.status(200).type("text/html").send(html);
+    });
+    app.get("/try", (req, res) => {
+        const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+        const serverUrl = host ? `https://${host}` : "http://localhost:3000";
+        const files = resolveWidgetFiles();
+        const html = files
+            ? renderWidgetHtml("apps-sdk", serverUrl, files.widgetFile, files.styleFile)
+            : `<div>Widget assets not found.</div>`;
+        res.status(200).type("text/html").send(html);
+    });
     const __dirname = path.dirname(fileURLToPath(import.meta.url));
     const assetsDir = path.resolve(__dirname, "assets");
     app.use("/assets", express.static(assetsDir));
