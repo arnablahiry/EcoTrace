@@ -62,12 +62,26 @@ server.registerResource(
     const html = files
       ? renderWidgetHtml(serverUrl, files.widgetFile, files.styleFile)
       : `<div>Widget assets not found.</div>`;
+    const contentMeta = {
+      "openai/widgetCSP": {
+        resource_domains: [serverUrl],
+        connect_domains: [serverUrl],
+      },
+      "openai/widgetDomain": serverUrl,
+      "openai/widgetDescription": "EcoTrace widget",
+      "openai/widgetPrefersBorder": true,
+      "openai/widgetHeight": 720,
+      "openai/widgetWidth": 960,
+      "openai/widgetOrientation": "landscape",
+      "openai/widgetLoadingText": "Loading EcoTrace...",
+    };
     return {
       contents: [
         {
           uri: widgetUri,
           mimeType: "text/html+skybridge",
           text: html,
+          _meta: contentMeta,
         },
       ],
     };
