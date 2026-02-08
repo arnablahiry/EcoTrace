@@ -1,7 +1,12 @@
 import "dotenv/config";
 import crypto from "node:crypto";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import express from "express";
 import { z } from "zod";
+import { mcp } from "./middleware.js";
 // Create the Skybridge MCP Server (Green Scanner)
 const server = new McpServer({
     name: "green-scanner",
@@ -9,6 +14,55 @@ const server = new McpServer({
 });
 const widgetName = "green-scanner";
 const widgetUri = `ui://widgets/apps-sdk/${widgetName}.html`;
+const widgetEntryKey = `src/widgets/${widgetName}.tsx`;
+const renderWidgetHtml = (serverUrl, widgetFile, styleFile) => {
+    return `<script type="module">window.skybridge = { hostType: "apps-sdk", serverUrl: "${serverUrl}" };</script>
+<div id="root"></div>
+<script type="module">
+  import("${serverUrl}/assets/${widgetFile}");
+</script>
+<link rel="stylesheet" crossorigin href="${serverUrl}/assets/${styleFile}" />`;
+};
+const resolveWidgetFiles = () => {
+    try {
+        const __dirname = path.dirname(fileURLToPath(import.meta.url));
+        const manifestPath = path.resolve(__dirname, "assets", ".vite", "manifest.json");
+        const raw = fs.readFileSync(manifestPath, "utf-8");
+        const manifest = JSON.parse(raw);
+        const widgetEntry = manifest[widgetEntryKey] ??
+            Object.values(manifest).find((entry) => entry.isEntry === true);
+        const styleEntry = manifest["style.css"];
+        const widgetFile = widgetEntry?.file?.replace(/^assets\//, "");
+        const styleFile = styleEntry?.file?.replace(/^assets\//, "");
+        if (!widgetFile || !styleFile)
+            return null;
+        return { widgetFile, styleFile };
+    }
+    catch {
+        return null;
+    }
+};
+server.registerResource(widgetName, widgetUri, {
+    description: "EcoTrace widget UI",
+    mimeType: "text/html+skybridge",
+}, async (_uri, extra) => {
+    const headers = extra?.requestInfo?.headers ?? {};
+    const host = headers["x-forwarded-host"] ?? headers.host ?? "";
+    const serverUrl = host ? `https://${host}` : "http://localhost:3000";
+    const files = resolveWidgetFiles();
+    const html = files
+        ? renderWidgetHtml(serverUrl, files.widgetFile, files.styleFile)
+        : `<div>Widget assets not found.</div>`;
+    return {
+        contents: [
+            {
+                uri: widgetUri,
+                mimeType: "text/html+skybridge",
+                text: html,
+            },
+        ],
+    };
+});
 export async function buildSustainableAlternativeResult(product_query, imageBase64) {
     const formatTags = (tags, fallback = "Unknown") => {
         if (!Array.isArray(tags))
@@ -791,5 +845,18 @@ server.registerTool("find_sustainable_alternative", {
         };
     }
 });
+if (process.env.NODE_ENV === "production") {
+    const app = express();
+    app.use(express.json({ limit: "10mb" }));
+    app.use(mcp(server));
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const assetsDir = path.resolve(__dirname, "assets");
+    app.use("/assets", express.static(assetsDir));
+    const PORT = Number(process.env.PORT) || 3000;
+    app.listen(PORT, () => {
+        console.log(`Server: http://localhost:${PORT}/`);
+        console.log(`MCP:    http://localhost:${PORT}/mcp`);
+    });
+}
 export default server;
 //# sourceMappingURL=index.js.map

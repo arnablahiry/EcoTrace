@@ -1,5 +1,4 @@
 import "dotenv/config";
-import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -911,75 +910,6 @@ Return JSON ONLY with keys: name, brand, categories, packaging, labels, ingredie
   };
 }
 
-server.registerResource(
-  widgetName,
-  widgetUri,
-  {
-    title: "Green Scanner Widget",
-    description: "UI for scanning products and finding sustainable alternatives.",
-    mimeType: "text/html+skybridge",
-  },
-  async (uri, extra) => {
-    const isProduction = process.env.NODE_ENV === "production";
-    const hostFromHeaders =
-      extra?.requestInfo?.headers?.["x-forwarded-host"] ??
-      extra?.requestInfo?.headers?.host;
-    const serverUrl =
-      isProduction && hostFromHeaders ? `https://${hostFromHeaders}` : "http://localhost:3000";
-    const widgetHtml = `<script type="module">window.skybridge = { hostType: "apps-sdk", serverUrl: "${serverUrl}" };</script>
-<script type="module">
-  import { injectIntoGlobalHook } from "${serverUrl}/assets/@react-refresh";
-  injectIntoGlobalHook(window); window.$RefreshReg$ = () => {};
-  window.$RefreshSig$ = () => (type) => type;
-  window.__vite_plugin_react_preamble_installed__ = true;
-</script>
-<script type="module" src="${serverUrl}/@vite/client"></script>
-<div id="root"></div>
-<script type="module" id="dev-widget-entry">
-  import("${serverUrl}/src/widgets/${widgetName}");
-</script>`;
-
-    const widgetDomain = isProduction && hostFromHeaders
-      ? `https://${hostFromHeaders}`
-      : serverUrl;
-    const contentMeta = {
-      "openai/widgetCSP": {
-        resource_domains: [serverUrl],
-        connect_domains: isProduction
-          ? [serverUrl]
-          : [serverUrl, "ws://localhost:24678"],
-      },
-      "openai/widgetDomain": widgetDomain,
-      "openai/widgetDescription": "Green Scanner widget",
-      "openai/widgetPrefersBorder": true,
-      "openai/widgetFallbackText":
-        "Open the Green Scanner widget to search for sustainable alternatives.",
-      "openai/widgetHeight": 720,
-      "openai/widgetWidth": 960,
-      "openai/widgetOrientation": "landscape",
-      "openai/widgetLoadingText": "Loading Green Scanner...",
-      "openai/widgetInitialState": {
-        title: "Green Scanner",
-        status: "Ready",
-      },
-      "openai/widgetSessionKey": crypto
-        .createHash("sha256")
-        .update(`green-scanner-${serverUrl}`)
-        .digest("hex"),
-    };
-
-    return {
-      contents: [
-        {
-          uri: uri.href,
-          mimeType: "text/html+skybridge",
-          text: widgetHtml,
-          _meta: contentMeta,
-        },
-      ],
-    };
-  },
-);
 
 server.registerTool(
   "find_sustainable_alternative",
