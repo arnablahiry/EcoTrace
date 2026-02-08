@@ -1018,6 +1018,25 @@ if (process.env.NODE_ENV === "production") {
   const app = express();
   app.use(express.json({ limit: "10mb" }));
   app.use(mcp(server));
+  app.get("/", (req, res) => {
+    const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+    const serverUrl = host ? `https://${host}` : "http://localhost:3000";
+    const files = resolveWidgetFiles();
+    const html = files
+      ? renderWidgetHtml("apps-sdk", serverUrl, files.widgetFile, files.styleFile)
+      : `<div>Widget assets not found.</div>`;
+    res.status(200).type("text/html").send(html);
+  });
+
+  app.get("/try", (req, res) => {
+    const host = req.headers["x-forwarded-host"] ?? req.headers.host ?? "";
+    const serverUrl = host ? `https://${host}` : "http://localhost:3000";
+    const files = resolveWidgetFiles();
+    const html = files
+      ? renderWidgetHtml("apps-sdk", serverUrl, files.widgetFile, files.styleFile)
+      : `<div>Widget assets not found.</div>`;
+    res.status(200).type("text/html").send(html);
+  });
 
   const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const assetsDir = path.resolve(__dirname, "assets");
