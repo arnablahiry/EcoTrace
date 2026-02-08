@@ -6,8 +6,10 @@ import { createServer as createViteServer } from "vite";
 
 import server, { buildSustainableAlternativeResult } from "./index.js";
 import { mcp } from "./middleware.js";
+import cors from "cors";
 
 const PORT = Number(process.env.PORT) || 3000;
+const env = process.env.NODE_ENV || "development";
 const widgetName = "green-scanner";
 
 async function start() {
@@ -83,6 +85,14 @@ async function start() {
       res.status(500).send("Image proxy error");
     }
   });
+
+  if (env === "production") {
+    const __filename = fileURLToPath(import.meta.url);
+    const __dirname = path.dirname(__filename);
+  
+    app.use("/assets", cors());
+    app.use("/assets", express.static(path.join(__dirname, "assets")));
+  }
 
   app.use(vite.middlewares);
   app.use(mcp(server));
