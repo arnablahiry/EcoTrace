@@ -1,5 +1,6 @@
 import "dotenv/config";
 import crypto from "node:crypto";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,6 +18,62 @@ const server = new McpServer({
 
 const widgetName = "green-scanner";
 const widgetUri = `ui://widgets/apps-sdk/${widgetName}.html`;
+const widgetEntryKey = `src/widgets/${widgetName}.tsx`;
+
+const renderWidgetHtml = (serverUrl: string, widgetFile: string, styleFile: string) => {
+  return `<script type="module">window.skybridge = { hostType: "apps-sdk", serverUrl: "${serverUrl}" };</script>
+<div id="root"></div>
+<script type="module">
+  import("${serverUrl}/assets/${widgetFile}");
+</script>
+<link rel="stylesheet" crossorigin href="${serverUrl}/assets/${styleFile}" />`;
+};
+
+const resolveWidgetFiles = () => {
+  try {
+    const __dirname = path.dirname(fileURLToPath(import.meta.url));
+    const manifestPath = path.resolve(__dirname, "assets", ".vite", "manifest.json");
+    const raw = fs.readFileSync(manifestPath, "utf-8");
+    const manifest = JSON.parse(raw) as Record<string, { file: string; isEntry?: boolean }>;
+    const widgetEntry =
+      manifest[widgetEntryKey] ??
+      Object.values(manifest).find((entry) => entry.isEntry === true);
+    const styleEntry = manifest["style.css"];
+    const widgetFile = widgetEntry?.file?.replace(/^assets\//, "");
+    const styleFile = styleEntry?.file?.replace(/^assets\//, "");
+    if (!widgetFile || !styleFile) return null;
+    return { widgetFile, styleFile };
+  } catch {
+    return null;
+  }
+};
+
+server.registerResource(
+  widgetName,
+  widgetUri,
+  {
+    description: "EcoTrace widget UI",
+    mimeType: "text/html+skybridge",
+  },
+  async (_uri, extra) => {
+    const headers = extra?.requestInfo?.headers ?? {};
+    const host = headers["x-forwarded-host"] ?? headers.host ?? "";
+    const serverUrl = host ? `https://${host}` : "http://localhost:3000";
+    const files = resolveWidgetFiles();
+    const html = files
+      ? renderWidgetHtml(serverUrl, files.widgetFile, files.styleFile)
+      : `<div>Widget assets not found.</div>`;
+    return {
+      contents: [
+        {
+          uri: widgetUri,
+          mimeType: "text/html+skybridge",
+          text: html,
+        },
+      ],
+    };
+  },
+);
 
 type ProductDetails = {
   name: string;
