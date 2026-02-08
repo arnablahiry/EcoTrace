@@ -990,7 +990,6 @@ server.registerTool(
         .describe("Optional product image as a data URL for image-based estimation."),
     },
     _meta: {
-      "openai/outputTemplate": widgetUri,
       "ui/resourceUri": extWidgetUri,
       ui: { resourceUri: extWidgetUri },
     },
