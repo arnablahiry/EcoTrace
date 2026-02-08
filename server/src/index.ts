@@ -100,6 +100,14 @@ server.registerResource(
   {
     description: "EcoTrace widget UI (mcp-app)",
     mimeType: "text/html;profile=mcp-app",
+    _meta: {
+      ui: {
+        csp: {
+          resourceDomains: ["*"],
+          connectDomains: ["*"],
+        },
+      },
+    },
   },
   async (_uri, extra) => {
     const headers = extra?.requestInfo?.headers ?? {};
