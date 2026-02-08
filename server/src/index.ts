@@ -17,10 +17,16 @@ const server = new McpServer({
 
 const widgetName = "green-scanner";
 const widgetUri = `ui://widgets/apps-sdk/${widgetName}.html`;
+const extWidgetUri = `ui://widgets/ext-apps/${widgetName}.html`;
 const widgetEntryKey = `src/widgets/${widgetName}.tsx`;
 
-const renderWidgetHtml = (serverUrl: string, widgetFile: string, styleFile: string) => {
-  return `<script type="module">window.skybridge = { hostType: "apps-sdk", serverUrl: "${serverUrl}" };</script>
+const renderWidgetHtml = (
+  hostType: "apps-sdk" | "mcp-app",
+  serverUrl: string,
+  widgetFile: string,
+  styleFile: string,
+) => {
+  return `<script type="module">window.skybridge = { hostType: "${hostType}", serverUrl: "${serverUrl}" };</script>
 <div id="root"></div>
 <script type="module">
   import("${serverUrl}/assets/${widgetFile}");
@@ -60,7 +66,7 @@ server.registerResource(
     const serverUrl = host ? `https://${host}` : "http://localhost:3000";
     const files = resolveWidgetFiles();
     const html = files
-      ? renderWidgetHtml(serverUrl, files.widgetFile, files.styleFile)
+      ? renderWidgetHtml("apps-sdk", serverUrl, files.widgetFile, files.styleFile)
       : `<div>Widget assets not found.</div>`;
     const contentMeta = {
       "openai/widgetCSP": {
@@ -82,6 +88,33 @@ server.registerResource(
           mimeType: "text/html+skybridge",
           text: html,
           _meta: contentMeta,
+        },
+      ],
+    };
+  },
+);
+
+server.registerResource(
+  `${widgetName}-mcp-app`,
+  extWidgetUri,
+  {
+    description: "EcoTrace widget UI (mcp-app)",
+    mimeType: "text/html;profile=mcp-app",
+  },
+  async (_uri, extra) => {
+    const headers = extra?.requestInfo?.headers ?? {};
+    const host = headers["x-forwarded-host"] ?? headers.host ?? "";
+    const serverUrl = host ? `https://${host}` : "http://localhost:3000";
+    const files = resolveWidgetFiles();
+    const html = files
+      ? renderWidgetHtml("mcp-app", serverUrl, files.widgetFile, files.styleFile)
+      : `<div>Widget assets not found.</div>`;
+    return {
+      contents: [
+        {
+          uri: extWidgetUri,
+          mimeType: "text/html;profile=mcp-app",
+          text: html,
         },
       ],
     };
@@ -940,6 +973,8 @@ server.registerTool(
     },
     _meta: {
       "openai/outputTemplate": widgetUri,
+      "ui/resourceUri": extWidgetUri,
+      ui: { resourceUri: extWidgetUri },
     },
   },
   async ({ product_query, image_base64 }) => {
