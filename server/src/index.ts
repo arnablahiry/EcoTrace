@@ -109,12 +109,22 @@ server.registerResource(
     const html = files
       ? renderWidgetHtml("mcp-app", serverUrl, files.widgetFile, files.styleFile)
       : `<div>Widget assets not found.</div>`;
+    const contentMeta = {
+      ui: {
+        csp: {
+          resourceDomains: [serverUrl],
+          connectDomains: [serverUrl],
+        },
+        domain: serverUrl,
+      },
+    };
     return {
       contents: [
         {
           uri: extWidgetUri,
           mimeType: "text/html;profile=mcp-app",
           text: html,
+          _meta: contentMeta,
         },
       ],
     };
